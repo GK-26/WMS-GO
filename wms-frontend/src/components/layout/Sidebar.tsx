@@ -70,6 +70,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
       visible: hasPermission('reports', 'read'),
     },
     {
+      label: 'File Management',
+      icon: 'pi pi-file',
+      command: () => handleNavigation('/file-management'),
+      className: location.pathname === '/file-management' ? 'p-highlight' : '',
+      visible: hasPermission('files', 'read'),
+    },
+    {
+      label: 'Email Notifications',
+      icon: 'pi pi-envelope',
+      command: () => handleNavigation('/email-notifications'),
+      className: location.pathname === '/email-notifications' ? 'p-highlight' : '',
+      visible: hasPermission('email', 'read'),
+    },
+    {
       label: 'Configuration',
       icon: 'pi pi-wrench',
       command: () => handleNavigation('/configuration'),

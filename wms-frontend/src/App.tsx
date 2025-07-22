@@ -1,5 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { AuthGuard } from './components/auth/AuthGuard';
 import { LoginPage } from './components/auth/LoginPage';
@@ -13,10 +15,23 @@ import { ShippingPage } from './pages/shipping/ShippingPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { AutomationPage } from './pages/automation/AutomationPage';
 import { ConfigurationPage } from './pages/configuration/ConfigurationPage';
+import FileManagement from './pages/FileManagement';
+import EmailNotifications from './pages/EmailNotifications';
 
 function App() {
   return (
     <AuthProvider>
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<LoginPage />} />
@@ -108,6 +123,26 @@ function App() {
             <AuthGuard requiredPermissions={[{ resource: 'configuration', action: 'read' }]}> 
               <MainLayout>
                 <ConfigurationPage />
+              </MainLayout>
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/file-management"
+          element={
+            <AuthGuard requiredPermissions={[{ resource: 'files', action: 'read' }]}> 
+              <MainLayout>
+                <FileManagement />
+              </MainLayout>
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/email-notifications"
+          element={
+            <AuthGuard requiredPermissions={[{ resource: 'email', action: 'read' }]}> 
+              <MainLayout>
+                <EmailNotifications />
               </MainLayout>
             </AuthGuard>
           }

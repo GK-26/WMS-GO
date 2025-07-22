@@ -3,6 +3,9 @@ import { Card } from 'primereact/card';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Tag } from 'primereact/tag';
+import { Button } from 'primereact/button';
+import { useDashboardData, useActivities, useAlerts } from '../../services/api';
+import { DashboardData, Activity, Alert } from '../../types';
 
 interface KPICard {
   title: string;
@@ -13,109 +16,49 @@ interface KPICard {
   color: string;
 }
 
-interface RecentActivity {
-  id: string;
-  type: string;
-  description: string;
-  timestamp: Date;
-  status: 'completed' | 'pending' | 'failed';
-}
-
-interface Alert {
-  id: string;
-  type: 'info' | 'warning' | 'error' | 'success';
-  message: string;
-  timestamp: Date;
-}
-
 export const DashboardPage: React.FC = () => {
-  // Mock KPI data
+  // API hooks
+  const { data: dashboardResponse, isLoading: dashboardLoading, error: dashboardError } = useDashboardData();
+  const { data: activitiesResponse, isLoading: activitiesLoading } = useActivities({ limit: 10 });
+  const { data: alertsResponse, isLoading: alertsLoading } = useAlerts({ limit: 5 });
+
+  const dashboardData = dashboardResponse?.data;
+  const activities = dashboardData?.recentActivities || activitiesResponse?.data?.data || [];
+  const alerts = dashboardData?.alerts || alertsResponse?.data?.data || [];
+
+  // Transform dashboard data to KPI cards
   const kpiData: KPICard[] = [
     {
       title: 'Total Orders',
-      value: '1,234',
-      change: '+12.5%',
+      value: dashboardData?.summary?.totalOrders?.toString() || '0',
+      change: '+12.5%', // TODO: Calculate from historical data
       trend: 'up',
       icon: 'pi pi-shopping-cart',
       color: '#3b82f6',
     },
     {
       title: 'Inventory Items',
-      value: '5,678',
-      change: '+3.2%',
+      value: dashboardData?.summary?.totalProducts?.toString() || '0',
+      change: '+3.2%', // TODO: Calculate from historical data
       trend: 'up',
       icon: 'pi pi-box',
       color: '#10b981',
     },
     {
       title: 'Pending Shipments',
-      value: '89',
-      change: '-5.1%',
+      value: dashboardData?.summary?.totalShipments?.toString() || '0',
+      change: '-5.1%', // TODO: Calculate from historical data
       trend: 'down',
       icon: 'pi pi-truck',
       color: '#f59e0b',
     },
     {
-      title: 'Active Workers',
-      value: '45',
-      change: '+2.3%',
+      title: 'Active Tasks',
+      value: dashboardData?.summary?.activeTasks?.toString() || '0',
+      change: '+2.3%', // TODO: Calculate from historical data
       trend: 'up',
       icon: 'pi pi-users',
       color: '#8b5cf6',
-    },
-  ];
-
-  // Mock recent activity data
-  const recentActivity: RecentActivity[] = [
-    {
-      id: '1',
-      type: 'Order',
-      description: 'Order #12345 completed and shipped',
-      timestamp: new Date(Date.now() - 5 * 60 * 1000),
-      status: 'completed',
-    },
-    {
-      id: '2',
-      type: 'Inventory',
-      description: 'Low stock alert for Product ABC-123',
-      timestamp: new Date(Date.now() - 15 * 60 * 1000),
-      status: 'pending',
-    },
-    {
-      id: '3',
-      type: 'Shipment',
-      description: 'Shipment #78910 arrived at warehouse',
-      timestamp: new Date(Date.now() - 30 * 60 * 1000),
-      status: 'completed',
-    },
-    {
-      id: '4',
-      type: 'Worker',
-      description: 'Worker John Smith completed shift',
-      timestamp: new Date(Date.now() - 45 * 60 * 1000),
-      status: 'completed',
-    },
-  ];
-
-  // Mock alerts data
-  const alerts: Alert[] = [
-    {
-      id: '1',
-      type: 'warning',
-      message: 'Low inventory levels detected for 5 items',
-      timestamp: new Date(Date.now() - 10 * 60 * 1000),
-    },
-    {
-      id: '2',
-      type: 'info',
-      message: 'System maintenance scheduled for tonight at 2 AM',
-      timestamp: new Date(Date.now() - 30 * 60 * 1000),
-    },
-    {
-      id: '3',
-      type: 'success',
-      message: 'Daily backup completed successfully',
-      timestamp: new Date(Date.now() - 60 * 60 * 1000),
     },
   ];
 
@@ -142,17 +85,40 @@ export const DashboardPage: React.FC = () => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const activityTypeTemplate = (rowData: RecentActivity) => (
-    <Tag value={rowData.type} severity="info" />
+  const activityTypeTemplate = (rowData: Activity) => (
+    <Tag value={rowData.type.replace('_', ' ').toUpperCase()} severity="info" />
   );
 
-  const activityStatusTemplate = (rowData: RecentActivity) => (
-    <Tag value={rowData.status} severity={getStatusSeverity(rowData.status) as any} />
+  const activityStatusTemplate = (rowData: Activity) => {
+    // Determine status based on activity type
+    let status = 'completed';
+    if (rowData.type.includes('created') || rowData.type.includes('assigned')) {
+      status = 'pending';
+    }
+    return <Tag value={status} severity={getStatusSeverity(status) as any} />;
+  };
+
+  const activityTimeTemplate = (rowData: Activity) => (
+    <span>{formatTime(new Date(rowData.createdAt))}</span>
   );
 
-  const activityTimeTemplate = (rowData: RecentActivity) => (
-    <span>{formatTime(rowData.timestamp)}</span>
+  const alertTypeTemplate = (rowData: Alert) => (
+    <Tag value={rowData.type.replace('_', ' ').toUpperCase()} severity={getAlertSeverity(rowData.type) as any} />
   );
+
+  const alertTimeTemplate = (rowData: Alert) => (
+    <span>{formatTime(new Date(rowData.createdAt))}</span>
+  );
+
+  if (dashboardError) {
+    return (
+      <div className="error-container">
+        <h2>Error Loading Dashboard</h2>
+        <p>Failed to load dashboard data. Please try again later.</p>
+        <Button label="Retry" icon="pi pi-refresh" onClick={() => window.location.reload()} />
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
@@ -168,7 +134,7 @@ export const DashboardPage: React.FC = () => {
             <div className="kpi-header">
               <div className="kpi-info">
                 <h3 className="kpi-value" style={{ color: kpi.color }}>
-                  {kpi.value}
+                  {dashboardLoading ? '...' : kpi.value}
                 </h3>
                 <p className="kpi-title">{kpi.title}</p>
               </div>
@@ -194,11 +160,17 @@ export const DashboardPage: React.FC = () => {
             <h3>Recent Activity</h3>
             <span className="card-subtitle">Latest warehouse operations</span>
           </div>
-          <DataTable value={recentActivity} showGridlines className="data-table">
+          <DataTable 
+            value={activities} 
+            showGridlines 
+            className="data-table"
+            loading={activitiesLoading}
+            emptyMessage={activitiesLoading ? "Loading activities..." : "No recent activity"}
+          >
             <Column field="type" header="Type" body={activityTypeTemplate} style={{ width: '100px' }} />
             <Column field="description" header="Description" />
             <Column field="status" header="Status" body={activityStatusTemplate} style={{ width: '120px' }} />
-            <Column field="timestamp" header="Time" body={activityTimeTemplate} style={{ width: '100px' }} />
+            <Column field="createdAt" header="Time" body={activityTimeTemplate} style={{ width: '100px' }} />
           </DataTable>
         </div>
 
@@ -208,22 +180,37 @@ export const DashboardPage: React.FC = () => {
             <h3>System Alerts</h3>
             <span className="card-subtitle">Important notifications</span>
           </div>
-          <div className="alerts-container">
-            {alerts.map((alert) => (
-              <div key={alert.id} className={`alert-item alert-${alert.type}`}>
-                <div className="alert-header">
-                  <i className={`pi ${alert.type === 'success' ? 'pi-check-circle' : alert.type === 'warning' ? 'pi-exclamation-triangle' : alert.type === 'error' ? 'pi-times-circle' : 'pi-info-circle'}`}></i>
-                  <Tag value={alert.type.toUpperCase()} severity={getAlertSeverity(alert.type) as any} />
+          {alertsLoading ? (
+            <div className="loading-container">
+              <p>Loading alerts...</p>
+            </div>
+          ) : (
+            <div className="alerts-container">
+              {alerts.length > 0 ? (
+                alerts.map((alert: Alert) => (
+                  <div key={alert.id} className={`alert-item alert-${alert.type}`}>
+                    <div className="alert-header">
+                      <i className={`pi ${alert.type === 'low_stock' ? 'pi-exclamation-triangle' : 
+                                     alert.type === 'overdue_order' ? 'pi-clock' : 
+                                     alert.type === 'system_error' ? 'pi-times-circle' : 
+                                     alert.type === 'security_breach' ? 'pi-shield' : 'pi-info-circle'}`}></i>
+                      <Tag value={alert.type.replace('_', ' ').toUpperCase()} severity={getAlertSeverity(alert.type) as any} />
+                    </div>
+                    <p className="alert-message">
+                      {alert.message}
+                    </p>
+                    <small className="alert-time">
+                      {formatTime(new Date(alert.createdAt))}
+                    </small>
+                  </div>
+                ))
+              ) : (
+                <div className="no-alerts">
+                  <p>No active alerts</p>
                 </div>
-                <p className="alert-message">
-                  {alert.message}
-                </p>
-                <small className="alert-time">
-                  {formatTime(alert.timestamp)}
-                </small>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

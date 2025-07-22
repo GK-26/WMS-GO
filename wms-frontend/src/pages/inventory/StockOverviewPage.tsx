@@ -6,8 +6,12 @@ import { Tag } from 'primereact/tag';
 import { InputText } from 'primereact/inputtext';
 import { Button } from 'primereact/button';
 import { ProgressBar } from 'primereact/progressbar';
+import { Dropdown } from 'primereact/dropdown';
+import { useInventoryItems, useProducts, useLocations } from '../../services/api';
+import { InventoryItem, Product, Location } from '../../types';
+import { toast } from 'react-toastify';
 
-interface StockItem {
+interface StockItemDisplay {
   id: string;
   sku: string;
   name: string;
@@ -22,57 +26,80 @@ interface StockItem {
 
 export const StockOverviewPage: React.FC = () => {
   const [globalFilter, setGlobalFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState<string | null>(null);
 
-  const stockItems: StockItem[] = [
-    {
-      id: '1',
-      sku: 'ABC-123',
-      name: 'Laptop Computer',
-      category: 'Electronics',
-      location: 'A1-B2-C3',
-      quantity: 45,
-      minQuantity: 10,
-      maxQuantity: 100,
-      status: 'in_stock',
-      lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    },
-    {
-      id: '2',
-      sku: 'XYZ-789',
-      name: 'Wireless Mouse',
-      category: 'Electronics',
-      location: 'A1-B2-C4',
-      quantity: 5,
-      minQuantity: 10,
-      maxQuantity: 50,
-      status: 'low_stock',
-      lastUpdated: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    },
-    {
-      id: '3',
-      sku: 'DEF-456',
-      name: 'Office Chair',
-      category: 'Furniture',
-      location: 'B1-C2-D3',
-      quantity: 0,
-      minQuantity: 5,
-      maxQuantity: 25,
-      status: 'out_of_stock',
-      lastUpdated: new Date(Date.now() - 30 * 60 * 1000),
-    },
-    {
-      id: '4',
-      sku: 'GHI-789',
-      name: 'Desk Lamp',
-      category: 'Furniture',
-      location: 'B1-C2-D4',
-      quantity: 120,
-      minQuantity: 20,
-      maxQuantity: 100,
-      status: 'overstock',
-      lastUpdated: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    },
+  // API hooks
+  const { data: inventoryResponse, isLoading: inventoryLoading, error: inventoryError } = useInventoryItems({
+    include: 'product,location'
+  });
+  const { data: productsResponse } = useProducts();
+  const { data: locationsResponse } = useLocations();
+
+  const inventoryItems = inventoryResponse?.data?.data || [];
+  const products = productsResponse?.data?.data || [];
+  const locations = locationsResponse?.data?.data || [];
+
+  // Create a map for quick lookups
+  const productMap = new Map(products.map((p: Product) => [p.id, p]));
+  const locationMap = new Map(locations.map((l: Location) => [l.id, l]));
+
+  // Transform inventory items to display format
+  const stockItems: StockItemDisplay[] = inventoryItems.map((item: InventoryItem) => {
+    const product = productMap.get(item.productId);
+    const location = locationMap.get(item.locationId);
+    
+    let status: StockItemDisplay['status'] = 'in_stock';
+    if (item.quantity === 0) {
+      status = 'out_of_stock';
+    } else if (item.quantity <= (product?.minQuantity || 0)) {
+      status = 'low_stock';
+    } else if (item.quantity >= (product?.maxQuantity || 0)) {
+      status = 'overstock';
+    }
+
+    return {
+      id: item.id,
+      sku: product?.sku || 'N/A',
+      name: product?.name || 'Unknown Product',
+      category: product?.category || 'Unknown',
+      location: location?.name || 'Unknown Location',
+      quantity: item.quantity,
+      minQuantity: product?.minQuantity || 0,
+      maxQuantity: product?.maxQuantity || 0,
+      status,
+      lastUpdated: new Date(item.updatedAt),
+    };
+  });
+
+  // Filter options
+  const categoryOptions = [
+    { label: 'All Categories', value: null },
+    ...Array.from(new Set(products.map((p: Product) => p.category))).map(cat => ({
+      label: cat,
+      value: cat
+    }))
   ];
+
+  const locationOptions = [
+    { label: 'All Locations', value: null },
+    ...locations.map((loc: Location) => ({
+      label: loc.name,
+      value: loc.id
+    }))
+  ];
+
+  // Apply filters
+  const filteredItems = stockItems.filter(item => {
+    const matchesCategory = !categoryFilter || item.category === categoryFilter;
+    const matchesLocation = !locationFilter || locationMap.get(locationFilter)?.name === item.location;
+    const matchesSearch = !globalFilter || 
+      item.sku.toLowerCase().includes(globalFilter.toLowerCase()) ||
+      item.name.toLowerCase().includes(globalFilter.toLowerCase()) ||
+      item.category.toLowerCase().includes(globalFilter.toLowerCase());
+    
+    return matchesCategory && matchesLocation && matchesSearch;
+  });
 
   const getStatusSeverity = (status: string) => {
     switch (status) {
@@ -94,8 +121,8 @@ export const StockOverviewPage: React.FC = () => {
     }
   };
 
-  const stockLevelTemplate = (rowData: StockItem) => {
-    const percentage = (rowData.quantity / rowData.maxQuantity) * 100;
+  const stockLevelTemplate = (rowData: StockItemDisplay) => {
+    const percentage = rowData.maxQuantity > 0 ? (rowData.quantity / rowData.maxQuantity) * 100 : 0;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <ProgressBar value={percentage} style={{ flex: 1, height: '8px' }} />
@@ -106,26 +133,61 @@ export const StockOverviewPage: React.FC = () => {
     );
   };
 
-  const statusTemplate = (rowData: StockItem) => (
+  const statusTemplate = (rowData: StockItemDisplay) => (
     <Tag value={getStatusLabel(rowData.status)} severity={getStatusSeverity(rowData.status) as any} />
   );
 
-  const actionTemplate = () => (
+  const actionTemplate = (rowData: StockItemDisplay) => (
     <div style={{ display: 'flex', gap: '0.5rem' }}>
-      <Button icon="pi pi-eye" size="small" text />
-      <Button icon="pi pi-pencil" size="small" text />
+      <Button 
+        icon="pi pi-eye" 
+        size="small" 
+        text 
+        tooltip="View Details"
+        onClick={() => {
+          // TODO: Navigate to product details
+          toast.info(`Viewing details for ${rowData.name}`);
+        }}
+      />
+      <Button 
+        icon="pi pi-pencil" 
+        size="small" 
+        text 
+        tooltip="Edit Item"
+        onClick={() => {
+          // TODO: Open edit modal
+          toast.info(`Editing ${rowData.name}`);
+        }}
+      />
     </div>
   );
+
+  if (inventoryError) {
+    return (
+      <div className="error-container">
+        <h2>Error Loading Inventory</h2>
+        <p>Failed to load inventory data. Please try again later.</p>
+        <Button label="Retry" icon="pi pi-refresh" onClick={() => window.location.reload()} />
+      </div>
+    );
+  }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ margin: 0, color: '#333' }}>Stock Overview</h2>
-        <Button label="Add Item" icon="pi pi-plus" />
+        <Button 
+          label="Add Item" 
+          icon="pi pi-plus" 
+          onClick={() => {
+            // TODO: Open add item modal
+            toast.info('Add item functionality coming soon');
+          }}
+        />
       </div>
 
       <Card>
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="p-input-icon-left" style={{ width: '300px' }}>
             <i className="pi pi-search" />
             <InputText
@@ -135,16 +197,31 @@ export const StockOverviewPage: React.FC = () => {
               style={{ width: '100%' }}
             />
           </span>
+          <Dropdown
+            value={categoryFilter}
+            options={categoryOptions}
+            onChange={(e) => setCategoryFilter(e.value)}
+            placeholder="Filter by Category"
+            style={{ width: '200px' }}
+          />
+          <Dropdown
+            value={locationFilter}
+            options={locationOptions}
+            onChange={(e) => setLocationFilter(e.value)}
+            placeholder="Filter by Location"
+            style={{ width: '200px' }}
+          />
         </div>
 
         <DataTable
-          value={stockItems}
+          value={filteredItems}
           globalFilter={globalFilter}
           showGridlines
           paginator
           rows={10}
           rowsPerPageOptions={[5, 10, 25]}
-          emptyMessage="No stock items found."
+          emptyMessage={inventoryLoading ? "Loading inventory..." : "No stock items found."}
+          loading={inventoryLoading}
         >
           <Column field="sku" header="SKU" sortable style={{ width: '120px' }} />
           <Column field="name" header="Product Name" sortable />

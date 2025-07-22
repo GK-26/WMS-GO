@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { TabView, TabPanel } from 'primereact/tabview';
 import { StockOverviewPage } from './StockOverviewPage';
-import { CycleCountingPage } from './CycleCountingPage';
 import { ProductDetailsPage } from './ProductDetailsPage';
+import { InventoryManagementPage } from './InventoryManagementPage';
+import { LocationManagementPage } from './LocationManagementPage';
+import { CycleCountingPage } from './CycleCountingPage';
 
 export const InventoryPage: React.FC = () => {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -13,17 +15,23 @@ export const InventoryPage: React.FC = () => {
         <h1>Inventory Management</h1>
         <p className="text-muted">Manage your warehouse inventory, stock levels, and product information</p>
       </div>
-      
+
       <div className="dashboard-card">
         <TabView activeIndex={activeIndex} onTabChange={(e) => setActiveIndex(e.index)}>
           <TabPanel header="Stock Overview">
             <StockOverviewPage />
           </TabPanel>
+          <TabPanel header="Products">
+            <ProductDetailsPage />
+          </TabPanel>
+          <TabPanel header="Inventory Items">
+            <InventoryManagementPage />
+          </TabPanel>
+          <TabPanel header="Locations">
+            <LocationManagementPage />
+          </TabPanel>
           <TabPanel header="Cycle Counting">
             <CycleCountingPage />
-          </TabPanel>
-          <TabPanel header="Product Details">
-            <ProductDetailsPage />
           </TabPanel>
         </TabView>
       </div>

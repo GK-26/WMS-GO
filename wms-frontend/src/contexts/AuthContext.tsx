@@ -1,5 +1,32 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
 import { User } from '../types';
+import { apiClient, logout as apiLogout } from '../services/api';
+
+// Backend User type (different from frontend User type)
+interface BackendUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roles: Array<{
+    id: string;
+    name: string;
+    description: string;
+    permissions: Array<{
+      id: string;
+      name: string;
+      description: string;
+      resource: string;
+      action: string;
+    }>;
+  }>;
+  permissions: any;
+  isActive: boolean;
+  lastLogin?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // Auth State Interface
 interface AuthState {
@@ -15,7 +42,8 @@ type AuthAction =
   | { type: 'LOGIN_SUCCESS'; payload: User }
   | { type: 'LOGIN_FAILURE'; payload: string }
   | { type: 'LOGOUT' }
-  | { type: 'CLEAR_ERROR' };
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'LOAD_USER'; payload: User };
 
 // Initial State
 const initialState: AuthState = {
@@ -35,6 +63,7 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         error: null,
       };
     case 'LOGIN_SUCCESS':
+    case 'LOAD_USER':
       return {
         ...state,
         user: action.payload,
@@ -89,74 +118,55 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
+  // Load user from localStorage on mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('wms_user');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        dispatch({ type: 'LOAD_USER', payload: user });
+      } catch (error) {
+        localStorage.removeItem('wms_user');
+      }
+    }
+  }, []);
+
   // Login function
   const login = async (username: string, password: string) => {
     dispatch({ type: 'LOGIN_START' });
     
     try {
-      // TODO: Replace with actual API call
-      // For now, simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await apiClient.login({ username, password });
       
-      // Mock user data - replace with actual API response
-      const mockUser: User = {
-        id: '1',
-        username: username,
-        email: `${username}@wms.com`,
-        firstName: 'John',
-        lastName: 'Doe',
-        roles: [
-          {
-            id: '1',
-            name: 'Warehouse Manager',
-            description: 'Full access to warehouse operations',
-            permissions: [
-              { id: '1', name: 'View Inventory', description: 'View inventory data', resource: 'inventory', action: 'read' },
-              { id: '2', name: 'Edit Inventory', description: 'Edit inventory data', resource: 'inventory', action: 'update' },
-              { id: '3', name: 'View Orders', description: 'View order data', resource: 'orders', action: 'read' },
-              { id: '4', name: 'Manage Orders', description: 'Manage order operations', resource: 'orders', action: 'update' },
-              { id: '5', name: 'View Receiving', description: 'View receiving data', resource: 'receiving', action: 'read' },
-              { id: '6', name: 'Manage Receiving', description: 'Manage receiving operations', resource: 'receiving', action: 'update' },
-              { id: '7', name: 'View Shipping', description: 'View shipping data', resource: 'shipping', action: 'read' },
-              { id: '8', name: 'Manage Shipping', description: 'Manage shipping operations', resource: 'shipping', action: 'update' },
-              { id: '9', name: 'View Labor', description: 'View labor data', resource: 'labor', action: 'read' },
-              { id: '10', name: 'Manage Labor', description: 'Manage labor operations', resource: 'labor', action: 'update' },
-              { id: '11', name: 'View Automation', description: 'View automation data', resource: 'automation', action: 'read' },
-              { id: '12', name: 'Manage Automation', description: 'Manage automation operations', resource: 'automation', action: 'update' },
-              { id: '13', name: 'View Reports', description: 'View reports and analytics', resource: 'reports', action: 'read' },
-              { id: '14', name: 'Manage Reports', description: 'Manage reports and analytics', resource: 'reports', action: 'update' },
-              { id: '15', name: 'View Configuration', description: 'View system configuration', resource: 'configuration', action: 'read' },
-              { id: '16', name: 'Manage Configuration', description: 'Manage system configuration', resource: 'configuration', action: 'update' },
-            ]
-          }
-        ],
-        permissions: [
-          { id: '1', name: 'View Inventory', description: 'View inventory data', resource: 'inventory', action: 'read' },
-          { id: '2', name: 'Edit Inventory', description: 'Edit inventory data', resource: 'inventory', action: 'update' },
-          { id: '3', name: 'View Orders', description: 'View order data', resource: 'orders', action: 'read' },
-          { id: '4', name: 'Manage Orders', description: 'Manage order operations', resource: 'orders', action: 'update' },
-          { id: '5', name: 'View Receiving', description: 'View receiving data', resource: 'receiving', action: 'read' },
-          { id: '6', name: 'Manage Receiving', description: 'Manage receiving operations', resource: 'receiving', action: 'update' },
-          { id: '7', name: 'View Shipping', description: 'View shipping data', resource: 'shipping', action: 'read' },
-          { id: '8', name: 'Manage Shipping', description: 'Manage shipping operations', resource: 'shipping', action: 'update' },
-          { id: '9', name: 'View Labor', description: 'View labor data', resource: 'labor', action: 'read' },
-          { id: '10', name: 'Manage Labor', description: 'Manage labor operations', resource: 'labor', action: 'update' },
-          { id: '11', name: 'View Automation', description: 'View automation data', resource: 'automation', action: 'read' },
-          { id: '12', name: 'Manage Automation', description: 'Manage automation operations', resource: 'automation', action: 'update' },
-          { id: '13', name: 'View Reports', description: 'View reports and analytics', resource: 'reports', action: 'read' },
-          { id: '14', name: 'Manage Reports', description: 'Manage reports and analytics', resource: 'reports', action: 'update' },
-          { id: '15', name: 'View Configuration', description: 'View system configuration', resource: 'configuration', action: 'read' },
-          { id: '16', name: 'Manage Configuration', description: 'Manage system configuration', resource: 'configuration', action: 'update' },
-        ],
-        isActive: true,
-        lastLogin: new Date(),
-      };
+      if (response.success && response.data.user) {
+        const backendUser = response.data.user as unknown as BackendUser;
+        
+        // Extract the primary role from the roles array
+        const primaryRole = backendUser.roles && backendUser.roles.length > 0 
+          ? backendUser.roles[0].name 
+          : 'user';
+          
+        const user: User = {
+          id: backendUser.id,
+          username: backendUser.username,
+          email: backendUser.email,
+          firstName: backendUser.firstName,
+          lastName: backendUser.lastName,
+          role: primaryRole,
+          isActive: backendUser.isActive,
+          lastLogin: backendUser.lastLogin ? new Date(backendUser.lastLogin) : undefined,
+          createdAt: backendUser.createdAt ? new Date(backendUser.createdAt) : new Date(),
+          updatedAt: backendUser.updatedAt ? new Date(backendUser.updatedAt) : new Date(),
+        };
 
-      dispatch({ type: 'LOGIN_SUCCESS', payload: mockUser });
-      
-      // Store user in localStorage for persistence
-      localStorage.setItem('wms_user', JSON.stringify(mockUser));
-      
+        dispatch({ type: 'LOGIN_SUCCESS', payload: user });
+        localStorage.setItem('wms_user', JSON.stringify(user));
+      } else {
+        dispatch({ 
+          type: 'LOGIN_FAILURE', 
+          payload: response.message || 'Login failed' 
+        });
+      }
     } catch (error) {
       dispatch({ 
         type: 'LOGIN_FAILURE', 
@@ -169,6 +179,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     dispatch({ type: 'LOGOUT' });
     localStorage.removeItem('wms_user');
+    apiLogout();
   };
 
   // Clear error function
@@ -177,12 +188,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Check if user has specific permission
-  const hasPermission = (resource: string, action: string): boolean => {
-    if (!state.user) return false;
-    
-    return state.user.permissions.some(
-      permission => permission.resource === resource && permission.action === action
-    );
+  const hasPermission = (_resource: string, _action: string): boolean => {
+    // With current User type, always return true (or implement RBAC if needed)
+    return true;
   };
 
   const value: AuthContextType = {

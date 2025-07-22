@@ -109,7 +109,7 @@ export const LoginPage: React.FC = () => {
 
         <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
           <p style={{ margin: 0, fontSize: '0.875rem', color: '#666' }}>
-            Demo Credentials: admin / admin
+            Demo Credentials: admin / admin123
           </p>
         </div>
       </Card>

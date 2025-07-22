@@ -6,103 +6,120 @@ import { Tag } from 'primereact/tag';
 import { Card } from 'primereact/card';
 import { Dialog } from 'primereact/dialog';
 import { InputTextarea } from 'primereact/inputtextarea';
-
-interface QualityItem {
-  id: string;
-  sku: string;
-  name: string;
-  asnNumber: string;
-  receivedQty: number;
-  status: 'pending' | 'approved' | 'rejected' | 'quarantine';
-  inspector?: string;
-  notes?: string;
-}
+import { ProgressSpinner } from 'primereact/progressspinner';
+import { Message } from 'primereact/message';
+import { useQualityChecks, useUpdateQualityCheck } from '../../services/api';
+import { QualityCheck } from '../../types';
 
 export const QualityCheckPage: React.FC = () => {
-  const [selectedItem, setSelectedItem] = useState<QualityItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<QualityCheck | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [inspectionNotes, setInspectionNotes] = useState('');
 
-  const mockQualityItems: QualityItem[] = [
-    {
-      id: '1',
-      sku: 'ABC-123',
-      name: 'Laptop Computer',
-      asnNumber: 'ASN-001',
-      receivedQty: 50,
-      status: 'pending',
-    },
-    {
-      id: '2',
-      sku: 'XYZ-789',
-      name: 'Wireless Mouse',
-      asnNumber: 'ASN-001',
-      receivedQty: 100,
-      status: 'pending',
-    },
-    {
-      id: '3',
-      sku: 'DEF-456',
-      name: 'Office Chair',
-      asnNumber: 'ASN-002',
-      receivedQty: 25,
-      status: 'approved',
-      inspector: 'John Doe',
-      notes: 'All items in good condition',
-    },
-  ];
+  // API hooks
+  const { data: qualityResponse, isLoading, error, refetch } = useQualityChecks();
+  const updateQualityCheckMutation = useUpdateQualityCheck();
+
+  const qualityItems = qualityResponse?.data?.data || [];
 
   const getStatusSeverity = (status: string) => {
     switch (status) {
-      case 'approved':
+      case 'passed':
         return 'success';
-      case 'rejected':
+      case 'failed':
         return 'danger';
       case 'quarantine':
         return 'warning';
+      case 'in_progress':
+        return 'info';
       default:
         return 'secondary';
     }
   };
 
-  const handleInspect = (item: QualityItem) => {
+  const handleInspect = (item: QualityCheck) => {
     setSelectedItem(item);
-    setInspectionNotes(item.notes || '');
+    setInspectionNotes(item.result?.notes || '');
     setOpenDialog(true);
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (selectedItem) {
-      // TODO: Implement approve functionality
-      console.log('Approving item:', selectedItem.sku);
+      try {
+        await updateQualityCheckMutation.mutateAsync({
+          id: selectedItem.id,
+          data: {
+            status: 'passed',
+            result: {
+              passed: true,
+              defects: [],
+              notes: inspectionNotes,
+            },
+          },
+        });
+        console.log('Quality check approved for:', selectedItem.checkNumber);
+        setOpenDialog(false);
+        refetch();
+      } catch (error) {
+        console.error('Failed to approve quality check:', error);
+      }
     }
-    setOpenDialog(false);
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (selectedItem) {
-      // TODO: Implement reject functionality
-      console.log('Rejecting item:', selectedItem.sku);
+      try {
+        await updateQualityCheckMutation.mutateAsync({
+          id: selectedItem.id,
+          data: {
+            status: 'failed',
+            result: {
+              passed: false,
+              defects: ['Quality standards not met'],
+              notes: inspectionNotes,
+            },
+          },
+        });
+        console.log('Quality check rejected for:', selectedItem.checkNumber);
+        setOpenDialog(false);
+        refetch();
+      } catch (error) {
+        console.error('Failed to reject quality check:', error);
+      }
     }
-    setOpenDialog(false);
   };
 
-  const handleQuarantine = () => {
+  const handleQuarantine = async () => {
     if (selectedItem) {
-      // TODO: Implement quarantine functionality
-      console.log('Quarantining item:', selectedItem.sku);
+      try {
+        await updateQualityCheckMutation.mutateAsync({
+          id: selectedItem.id,
+          data: {
+            status: 'quarantine',
+            result: {
+              passed: false,
+              defects: ['Item quarantined for further inspection'],
+              notes: inspectionNotes,
+            },
+          },
+        });
+        console.log('Quality check quarantined for:', selectedItem.checkNumber);
+        setOpenDialog(false);
+        refetch();
+      } catch (error) {
+        console.error('Failed to quarantine quality check:', error);
+      }
     }
-    setOpenDialog(false);
   };
 
-  const statusTemplate = (rowData: QualityItem) => (
+  const statusTemplate = (rowData: QualityCheck) => (
     <Tag 
       value={rowData.status} 
       severity={getStatusSeverity(rowData.status)}
     />
   );
 
-  const actionsTemplate = (rowData: QualityItem) => (
+  const actionsTemplate = (rowData: QualityCheck) => (
     <Button
       label={rowData.status === 'pending' ? 'Inspect' : 'View Details'}
       size="small"
@@ -121,6 +138,7 @@ export const QualityCheckPage: React.FC = () => {
             outlined
             severity="warning"
             onClick={handleQuarantine}
+            loading={updateQualityCheckMutation.isPending}
           />
           <Button
             label="Reject"
@@ -128,49 +146,84 @@ export const QualityCheckPage: React.FC = () => {
             severity="danger"
             icon="pi pi-times"
             onClick={handleReject}
+            loading={updateQualityCheckMutation.isPending}
           />
           <Button
             label="Approve"
             severity="success"
             icon="pi pi-check"
             onClick={handleApprove}
+            loading={updateQualityCheckMutation.isPending}
           />
         </>
       )}
     </div>
   );
 
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-2xl font-bold">Quality Check</h2>
+        <Message 
+          severity="error" 
+          text="Failed to load quality check data. Please try again." 
+        />
+        <Button 
+          label="Retry" 
+          icon="pi pi-refresh" 
+          onClick={() => refetch()} 
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Quality Check</h2>
 
       <Card>
-        <DataTable 
-          value={mockQualityItems}
-          stripedRows
-          showGridlines
-          className="w-full"
-        >
-          <Column field="sku" header="SKU" sortable />
-          <Column field="name" header="Product Name" sortable />
-          <Column field="asnNumber" header="ASN #" sortable />
-          <Column field="receivedQty" header="Received Qty" sortable />
-          <Column field="status" header="Status" body={statusTemplate} sortable />
-          <Column 
-            field="inspector" 
-            header="Inspector" 
-            body={(rowData) => rowData.inspector || '-'}
-            sortable 
-          />
-          <Column header="Actions" body={actionsTemplate} style={{ width: '120px' }} />
-        </DataTable>
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <ProgressSpinner />
+          </div>
+        ) : (
+          <DataTable 
+            value={qualityItems}
+            stripedRows
+            showGridlines
+            className="w-full"
+          >
+            <Column field="checkNumber" header="Check #" sortable />
+            <Column 
+              field="productId" 
+              header="Product" 
+              body={(rowData) => rowData.product?.name || rowData.productId}
+              sortable 
+            />
+            <Column 
+              field="asnId" 
+              header="ASN #" 
+              body={(rowData) => rowData.asnId || '-'}
+              sortable 
+            />
+            <Column field="type" header="Type" sortable />
+            <Column field="status" header="Status" body={statusTemplate} sortable />
+            <Column 
+              field="inspectorId" 
+              header="Inspector" 
+              body={(rowData) => rowData.inspectorId || '-'}
+              sortable 
+            />
+            <Column header="Actions" body={actionsTemplate} style={{ width: '120px' }} />
+          </DataTable>
+        )}
       </Card>
 
       {/* Inspection Dialog */}
       <Dialog 
         visible={openDialog} 
         onHide={() => setOpenDialog(false)} 
-        header={`Quality Inspection - ${selectedItem?.name}`}
+        header={`Quality Inspection - ${selectedItem?.product?.name || selectedItem?.checkNumber}`}
         footer={dialogFooter}
         style={{ width: '50vw' }}
         modal
@@ -178,16 +231,20 @@ export const QualityCheckPage: React.FC = () => {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium">SKU:</label>
-              <div className="text-sm">{selectedItem?.sku}</div>
+              <label className="text-sm font-medium">Check #:</label>
+              <div className="text-sm">{selectedItem?.checkNumber}</div>
             </div>
             <div>
-              <label className="text-sm font-medium">ASN:</label>
-              <div className="text-sm">{selectedItem?.asnNumber}</div>
+              <label className="text-sm font-medium">Product:</label>
+              <div className="text-sm">{selectedItem?.product?.name || selectedItem?.productId}</div>
             </div>
             <div>
-              <label className="text-sm font-medium">Quantity:</label>
-              <div className="text-sm">{selectedItem?.receivedQty}</div>
+              <label className="text-sm font-medium">Type:</label>
+              <div className="text-sm">{selectedItem?.type}</div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Status:</label>
+              <div className="text-sm">{selectedItem?.status}</div>
             </div>
           </div>
           

@@ -6,61 +6,28 @@ import { Tag } from 'primereact/tag';
 import { Card } from 'primereact/card';
 import { Dropdown } from 'primereact/dropdown';
 import { Paginator } from 'primereact/paginator';
-
-interface ASN {
-  id: string;
-  asnNumber: string;
-  poNumber: string;
-  supplier: string;
-  expectedDate: Date;
-  status: 'pending' | 'received' | 'partial' | 'overdue';
-  totalItems: number;
-  receivedItems: number;
-  dockDoor?: string;
-}
+import { ProgressSpinner } from 'primereact/progressspinner';
+import { Message } from 'primereact/message';
+import { useASNs, useReceiveASNItem } from '../../services/api';
+import { ASN } from '../../types';
 
 export const ASNListPage: React.FC = () => {
   const [first, setFirst] = useState(0);
   const [rows, setRows] = useState(10);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const mockASNs: ASN[] = [
-    {
-      id: '1',
-      asnNumber: 'ASN-001',
-      poNumber: 'PO-2024-001',
-      supplier: 'Tech Supplies Inc',
-      expectedDate: new Date(),
-      status: 'pending',
-      totalItems: 150,
-      receivedItems: 0,
-      dockDoor: 'Dock 1',
-    },
-    {
-      id: '2',
-      asnNumber: 'ASN-002',
-      poNumber: 'PO-2024-002',
-      supplier: 'Office Depot',
-      expectedDate: new Date(Date.now() - 24 * 60 * 60 * 1000), // Yesterday
-      status: 'overdue',
-      totalItems: 75,
-      receivedItems: 0,
-    },
-    {
-      id: '3',
-      asnNumber: 'ASN-003',
-      poNumber: 'PO-2024-003',
-      supplier: 'Global Electronics',
-      expectedDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
-      status: 'pending',
-      totalItems: 200,
-      receivedItems: 0,
-    },
-  ];
+  // API hooks
+  const { data: asnResponse, isLoading, error, refetch } = useASNs({
+    page: currentPage,
+    limit: rows,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+  });
 
-  const filteredASNs = mockASNs.filter(asn =>
-    statusFilter === 'all' || asn.status === statusFilter
-  );
+  const receiveASNItemMutation = useReceiveASNItem();
+
+  const asns = asnResponse?.data?.data || [];
+  const totalRecords = asnResponse?.data?.pagination?.total || 0;
 
   const getStatusSeverity = (status: string) => {
     switch (status) {
@@ -77,20 +44,32 @@ export const ASNListPage: React.FC = () => {
     }
   };
 
-  const handleReceive = (asn: ASN) => {
-    // TODO: Implement receive functionality
-    console.log('Receiving ASN:', asn.asnNumber);
+  const handleReceive = async (asn: ASN) => {
+    try {
+      await receiveASNItemMutation.mutateAsync({
+        id: asn.id,
+        data: {
+          itemId: '', // This would need to be implemented with item selection
+          quantity: 0, // This would need to be implemented with quantity input
+        }
+      });
+      console.log(`ASN ${asn.asnNumber} received successfully`);
+      refetch();
+    } catch (error) {
+      console.error('Failed to receive ASN');
+      console.error('Error receiving ASN:', error);
+    }
   };
 
   const handleQualityCheck = (asn: ASN) => {
-    // TODO: Implement quality check functionality
+    // TODO: Navigate to quality check page
     console.log('Quality check for ASN:', asn.asnNumber);
   };
 
   const expectedDateTemplate = (rowData: ASN) => (
     <div>
-      <div>{rowData.expectedDate.toLocaleDateString()}</div>
-      {rowData.status === 'overdue' && (
+      <div>{new Date(rowData.expectedArrivalDate).toLocaleDateString()}</div>
+      {new Date(rowData.expectedArrivalDate) < new Date() && rowData.status !== 'received' && (
         <div className="text-red-500 text-sm">Overdue</div>
       )}
     </div>
@@ -119,7 +98,8 @@ export const ASNListPage: React.FC = () => {
         size="small" 
         text 
         severity="success"
-        disabled={rowData.status === 'received'}
+        disabled={rowData.status === 'received' || receiveASNItemMutation.isPending}
+        loading={receiveASNItemMutation.isPending}
         onClick={() => handleReceive(rowData)}
       />
       <Button 
@@ -144,7 +124,25 @@ export const ASNListPage: React.FC = () => {
   const onPageChange = (event: any) => {
     setFirst(event.first);
     setRows(event.rows);
+    setCurrentPage(Math.floor(event.first / event.rows) + 1);
   };
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-2xl font-bold">Advance Shipping Notices (ASN)</h2>
+        <Message 
+          severity="error" 
+          text="Failed to load ASN data. Please try again." 
+        />
+        <Button 
+          label="Retry" 
+          icon="pi pi-refresh" 
+          onClick={() => refetch()} 
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -160,35 +158,42 @@ export const ASNListPage: React.FC = () => {
       </div>
 
       <Card>
-        <DataTable 
-          value={filteredASNs.slice(first, first + rows)}
-          paginator={false}
-          stripedRows
-          showGridlines
-          className="w-full"
-        >
-          <Column field="asnNumber" header="ASN #" sortable />
-          <Column field="poNumber" header="PO #" sortable />
-          <Column field="supplier" header="Supplier" sortable />
-          <Column field="expectedDate" header="Expected Date" body={expectedDateTemplate} sortable />
-          <Column field="status" header="Status" body={statusTemplate} sortable />
-          <Column field="receivedItems" header="Progress" body={progressTemplate} sortable />
-          <Column 
-            field="dockDoor" 
-            header="Dock Door" 
-            body={(rowData) => rowData.dockDoor || 'Not Assigned'}
-            sortable 
-          />
-          <Column header="Actions" body={actionsTemplate} style={{ width: '120px' }} />
-        </DataTable>
-        
-        <Paginator
-          first={first}
-          rows={rows}
-          totalRecords={filteredASNs.length}
-          rowsPerPageOptions={[5, 10, 25]}
-          onPageChange={onPageChange}
-        />
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <ProgressSpinner />
+          </div>
+        ) : (
+          <>
+            <DataTable 
+              value={asns}
+              paginator={false}
+              stripedRows
+              showGridlines
+              className="w-full"
+            >
+              <Column field="asnNumber" header="ASN #" sortable />
+              <Column field="supplierId" header="Supplier" sortable />
+              <Column field="expectedArrivalDate" header="Expected Date" body={expectedDateTemplate} sortable />
+              <Column field="status" header="Status" body={statusTemplate} sortable />
+              <Column field="receivedItems" header="Progress" body={progressTemplate} sortable />
+              <Column 
+                field="notes" 
+                header="Notes" 
+                body={(rowData) => rowData.notes || 'No notes'}
+                sortable 
+              />
+              <Column header="Actions" body={actionsTemplate} style={{ width: '120px' }} />
+            </DataTable>
+            
+            <Paginator
+              first={first}
+              rows={rows}
+              totalRecords={totalRecords}
+              rowsPerPageOptions={[5, 10, 25]}
+              onPageChange={onPageChange}
+            />
+          </>
+        )}
       </Card>
     </div>
   );

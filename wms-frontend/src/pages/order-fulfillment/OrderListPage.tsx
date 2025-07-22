@@ -6,13 +6,16 @@ import { Tag } from 'primereact/tag';
 import { Button } from 'primereact/button';
 import { InputText } from 'primereact/inputtext';
 import { Dropdown } from 'primereact/dropdown';
+import { useOrders, useCustomers } from '../../services/api';
+import { Order, Customer } from '../../types';
+import { toast } from 'react-toastify';
 
-interface Order {
+interface OrderDisplay {
   id: string;
   orderNumber: string;
   customerName: string;
   orderDate: Date;
-  status: 'pending' | 'processing' | 'picking' | 'packing' | 'shipped' | 'delivered';
+  status: 'pending' | 'processing' | 'picking' | 'packing' | 'shipped' | 'delivered' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   totalItems: number;
   totalValue: number;
@@ -23,56 +26,38 @@ interface Order {
 export const OrderListPage: React.FC = () => {
   const [globalFilter, setGlobalFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
 
-  const orders: Order[] = [
-    {
-      id: '1',
-      orderNumber: 'ORD-001',
-      customerName: 'John Smith',
-      orderDate: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      status: 'processing',
-      priority: 'high',
-      totalItems: 5,
-      totalValue: 1250.00,
-      assignedTo: 'Mike Davis',
-      estimatedShipDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    },
-    {
-      id: '2',
-      orderNumber: 'ORD-002',
-      customerName: 'Sarah Johnson',
-      orderDate: new Date(Date.now() - 4 * 60 * 60 * 1000),
-      status: 'picking',
-      priority: 'medium',
-      totalItems: 3,
-      totalValue: 450.00,
-      assignedTo: 'Lisa Wilson',
-      estimatedShipDate: new Date(Date.now() + 12 * 60 * 60 * 1000),
-    },
-    {
-      id: '3',
-      orderNumber: 'ORD-003',
-      customerName: 'David Brown',
-      orderDate: new Date(Date.now() - 6 * 60 * 60 * 1000),
-      status: 'packing',
-      priority: 'low',
-      totalItems: 8,
-      totalValue: 890.00,
-      assignedTo: 'John Smith',
-      estimatedShipDate: new Date(Date.now() + 6 * 60 * 60 * 1000),
-    },
-    {
-      id: '4',
-      orderNumber: 'ORD-004',
-      customerName: 'Emily Davis',
-      orderDate: new Date(Date.now() - 1 * 60 * 60 * 1000),
-      status: 'pending',
-      priority: 'urgent',
-      totalItems: 2,
-      totalValue: 320.00,
-      estimatedShipDate: new Date(Date.now() + 2 * 60 * 60 * 1000),
-    },
-  ];
+  // API hooks
+  const { data: ordersResponse, isLoading: ordersLoading, error: ordersError } = useOrders({
+    include: 'customer,items'
+  });
+  const { data: customersResponse } = useCustomers();
+
+  const orders = ordersResponse?.data?.data || [];
+  const customers = customersResponse?.data?.data || [];
+
+  // Create a map for quick lookups
+  const customerMap = new Map(customers.map((c: Customer) => [c.id, c]));
+
+  // Transform orders to display format
+  const orderDisplays: OrderDisplay[] = orders.map((order: Order) => {
+    const customer = customerMap.get(order.customerId);
+    const totalItems = order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+    
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      customerName: customer?.name || 'Unknown Customer',
+      orderDate: new Date(order.orderDate),
+      status: order.status,
+      priority: order.priority,
+      totalItems,
+      totalValue: order.totalAmount,
+      assignedTo: undefined, // TODO: Add assignment tracking
+      estimatedShipDate: new Date(order.requiredDate),
+    };
+  });
 
   const statusOptions = [
     { label: 'All Status', value: null },
@@ -82,6 +67,15 @@ export const OrderListPage: React.FC = () => {
     { label: 'Packing', value: 'packing' },
     { label: 'Shipped', value: 'shipped' },
     { label: 'Delivered', value: 'delivered' },
+    { label: 'Cancelled', value: 'cancelled' },
+  ];
+
+  const priorityOptions = [
+    { label: 'All Priorities', value: null },
+    { label: 'Low', value: 'low' },
+    { label: 'Medium', value: 'medium' },
+    { label: 'High', value: 'high' },
+    { label: 'Urgent', value: 'urgent' },
   ];
 
   const getStatusSeverity = (status: string) => {
@@ -92,6 +86,7 @@ export const OrderListPage: React.FC = () => {
       case 'packing': return 'secondary';
       case 'shipped': return 'success';
       case 'delivered': return 'success';
+      case 'cancelled': return 'danger';
       default: return 'info';
     }
   };
@@ -106,43 +101,94 @@ export const OrderListPage: React.FC = () => {
     }
   };
 
-  const statusTemplate = (rowData: Order) => (
+  const statusTemplate = (rowData: OrderDisplay) => (
     <Tag value={rowData.status.charAt(0).toUpperCase() + rowData.status.slice(1)} 
          severity={getStatusSeverity(rowData.status) as any} />
   );
 
-  const priorityTemplate = (rowData: Order) => (
+  const priorityTemplate = (rowData: OrderDisplay) => (
     <Tag value={rowData.priority.charAt(0).toUpperCase() + rowData.priority.slice(1)} 
          severity={getPrioritySeverity(rowData.priority) as any} />
   );
 
-  const valueTemplate = (rowData: Order) => (
+  const valueTemplate = (rowData: OrderDisplay) => (
     <span>${rowData.totalValue.toFixed(2)}</span>
   );
 
-  const actionTemplate = (rowData: Order) => (
+  const actionTemplate = (rowData: OrderDisplay) => (
     <div style={{ display: 'flex', gap: '0.5rem' }}>
-      <Button icon="pi pi-eye" size="small" text tooltip="View Order" />
-      <Button icon="pi pi-pencil" size="small" text tooltip="Edit Order" />
+      <Button 
+        icon="pi pi-eye" 
+        size="small" 
+        text 
+        tooltip="View Order"
+        onClick={() => {
+          // TODO: Navigate to order details
+          toast.info(`Viewing order ${rowData.orderNumber}`);
+        }}
+      />
+      <Button 
+        icon="pi pi-pencil" 
+        size="small" 
+        text 
+        tooltip="Edit Order"
+        onClick={() => {
+          // TODO: Open edit modal
+          toast.info(`Editing order ${rowData.orderNumber}`);
+        }}
+      />
       {rowData.status === 'pending' && (
-        <Button icon="pi pi-play" size="small" text severity="success" tooltip="Start Processing" />
+        <Button 
+          icon="pi pi-play" 
+          size="small" 
+          text 
+          severity="success" 
+          tooltip="Start Processing"
+          onClick={() => {
+            // TODO: Start order processing
+            toast.info(`Starting processing for order ${rowData.orderNumber}`);
+          }}
+        />
       )}
     </div>
   );
 
-  const filteredOrders = statusFilter 
-    ? orders.filter(order => order.status === statusFilter)
-    : orders;
+  const filteredOrders = orderDisplays.filter(order => {
+    const matchesStatus = !statusFilter || order.status === statusFilter;
+    const matchesPriority = !priorityFilter || order.priority === priorityFilter;
+    const matchesSearch = !globalFilter || 
+      order.orderNumber.toLowerCase().includes(globalFilter.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(globalFilter.toLowerCase());
+    
+    return matchesStatus && matchesPriority && matchesSearch;
+  });
+
+  if (ordersError) {
+    return (
+      <div className="error-container">
+        <h2>Error Loading Orders</h2>
+        <p>Failed to load order data. Please try again later.</p>
+        <Button label="Retry" icon="pi pi-refresh" onClick={() => window.location.reload()} />
+      </div>
+    );
+  }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ margin: 0, color: '#333' }}>Order List</h2>
-        <Button label="Create Order" icon="pi pi-plus" />
+        <Button 
+          label="Create Order" 
+          icon="pi pi-plus" 
+          onClick={() => {
+            // TODO: Open create order modal
+            toast.info('Create order functionality coming soon');
+          }}
+        />
       </div>
 
       <Card>
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="p-input-icon-left" style={{ width: '300px' }}>
             <i className="pi pi-search" />
             <InputText
@@ -159,6 +205,13 @@ export const OrderListPage: React.FC = () => {
             placeholder="Filter by Status"
             style={{ width: '200px' }}
           />
+          <Dropdown
+            value={priorityFilter}
+            options={priorityOptions}
+            onChange={(e) => setPriorityFilter(e.value)}
+            placeholder="Filter by Priority"
+            style={{ width: '200px' }}
+          />
         </div>
 
         <DataTable
@@ -168,7 +221,8 @@ export const OrderListPage: React.FC = () => {
           paginator
           rows={10}
           rowsPerPageOptions={[5, 10, 25]}
-          emptyMessage="No orders found."
+          emptyMessage={ordersLoading ? "Loading orders..." : "No orders found."}
+          loading={ordersLoading}
         >
           <Column field="orderNumber" header="Order #" sortable style={{ width: '120px' }} />
           <Column field="customerName" header="Customer" sortable />
